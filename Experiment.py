@@ -6,7 +6,7 @@ Created on Sun Apr 26 22:55:18 2026
 """
 import pandas as pd
 from scipy import optimize
-import math
+import numpy as np
 import matplotlib.pyplot as plt
 
 class Experiment:
@@ -16,14 +16,18 @@ class Experiment:
         self.H_0 = self.df.iloc[1,0]
         self.Epsilon_0 = self.df.iloc[1,1]
         self.Epsilon_p = self.df.iloc[1,2]
-        self.H_c_time = self.df.iloc[5:,0].to_numpy()
-        self.H_c = self.df.iloc[5:,1].to_numpy()
-        self.H_s_time = self.df.iloc[5:,2].to_numpy()
-        self.H_s = self.df.iloc[5:,3].to_numpy()
         self.Mu_c = self.df.iloc[1,3]
         self.Rho_c = self.df.iloc[1,4]
         self.Delta_roh = self.df.iloc[1,5]
         self.G = 9.81
+       
+        hc_data = self.df.iloc[5:, [0,1]].dropna()
+        hs_data = self.df.iloc[5:, [2,3]].dropna()
+        self.H_c_time = hc_data.iloc[:,0].to_numpy()
+        self.H_c      = hc_data.iloc[:,1].to_numpy()
+        self.H_s_time = hs_data.iloc[:,0].to_numpy()
+        self.H_s      = hs_data.iloc[:,1].to_numpy()        
+       
         self.v_0 = None
         self.phi_0 = None
         self.psi_i = None
@@ -40,7 +44,7 @@ class Experiment:
             raise ValueError('v_0 has not been calculated')
         
         def f(x):
-            return self.v_0*1e-3 - 12*self.Mu_c*1e-3/(0.53*self.Rho_c*x)*(-1 + math.sqrt(1 + (0.53*self.Rho_c*self.Delta_roh*self.G*x**3*(1 - self.Epsilon_0))/(108*(self.Mu_c*1e-3)**2*(1 + 4.56*self.Epsilon_0**0.73))))
+            return self.v_0*1e-3 - 12*self.Mu_c*1e-3/(0.53*self.Rho_c*x)*(-1 + np.sqrt(1 + (0.53*self.Rho_c*self.Delta_roh*self.G*x**3*(1 - self.Epsilon_0))/(108*(self.Mu_c*1e-3)**2*(1 + 4.56*self.Epsilon_0**0.73))))
         
         self.phi_0 = optimize.brentq(f, 1e-2, 1e-5)*1e3
        
@@ -58,10 +62,13 @@ class Experiment:
         if self.psi_i is None:
             raise ValueError('psi_i has not been calculated')
             
-        def f(x):
-            return (1 - self.Epsilon_0)/(1 - self.Epsilon_p)*self.H_0*1e-3 - (self.Epsilon_p*self.v_0*1e-3*x)/(2*(1 - self.Epsilon_p)) - (self.psi_i*1e-3*x)/2 - self.H_0*1e-3 + (self.H_0*1e-3/x - self.v_0*1e-3/2 - (1 -self.Epsilon_p)*self.psi_i*1e-3/(2*self.Epsilon_p))*x + self.psi_i*1e-3*x/(math.log(1 - self.psi_i*1e-3/(self.H_0*1e-3/x - self.v_0*1e-3/2 - (1 -self.Epsilon_p)*self.psi_i*1e-3/(2*self.Epsilon_p))))
+        def f(x):            
+            if  self.psi_i*1e-3/(self.H_0*1e-3/x - self.v_0*1e-3/2 - (1 -self.Epsilon_p)*self.psi_i*1e-3/(2*self.Epsilon_p)) >= 1:
+                return 1e10
+            
+            return (1 - self.Epsilon_0)/(1 - self.Epsilon_p)*self.H_0*1e-3 - (self.Epsilon_p*self.v_0*1e-3*x)/(2*(1 - self.Epsilon_p)) - (self.psi_i*1e-3*x)/2 - self.H_0*1e-3 + (self.H_0*1e-3/x - self.v_0*1e-3/2 - (1 -self.Epsilon_p)*self.psi_i*1e-3/(2*self.Epsilon_p))*x + self.psi_i*1e-3*x/(np.log(1 - self.psi_i*1e-3/(self.H_0*1e-3/x - self.v_0*1e-3/2 - (1 -self.Epsilon_p)*self.psi_i*1e-3/(2*self.Epsilon_p))))
         
-        self.t_i = optimize.brentq(f, 1e-3, self.H_c_time[-1])
+        self.t_i = optimize.newton(f, self.H_c_time[-1]/2, maxiter=100)
         self.V = (self.H_0*1e-3/self.t_i - self.v_0*1e-3/2 - (1 -self.Epsilon_p)*self.psi_i*1e-3/(2*self.Epsilon_p))*1e3
         
     def calc_tau_0_exp(self):

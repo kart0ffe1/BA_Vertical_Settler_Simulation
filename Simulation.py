@@ -167,6 +167,46 @@ class Simulation:
         
         res = optimize.brentq(Re_s_iteration, 1e-8, 10e-3, full_output= True, xtol=2e-12)
         self.phi_0 = res[0]
+    
+    def calc_psi_i(self,t_i):        
+        psi_i = (
+            self.Exp.Epsilon_p*(2*self.Exp.H_0*(1 - self.Exp.Epsilon_0)
+            - self.v_0*t_i)/((1 - self.Exp.Epsilon_p)*(3*self.tau_0 + t_i))    
+        )
+        return psi_i
+          
+    
+    def calc_V(self,t_i):
+        if self.psi_i is None:
+            raise ValueError('psi_i yet to be determined')
+        
+        V = (
+             self.Exp.H_0/t_i - self.v_0/2 - 
+             (1 - self.Exp.Epsilon_p)*self.psi_i/(2*self.Exp.Epsilon_p)   
+        )
+        return V
+    
+    def calc_V_iteration(self, t_i):
+      V = (
+           self.Exp.H_0/t_i - self.v_0/2 - 
+           (1 - self.Exp.Epsilon_p)*self.calc_psi_i(t_i)/(2*self.Exp.Epsilon_p)   
+      )
+      return V   
+    
+    def calc_delta_h_i(self):
+        if self.v_0 is None:
+            raise ValueError('v_0 has not been calculated')
+        if self.psi_i is None:
+            raise ValueError('psi_i has not been calculated')
+        if self.t_i is None:
+            raise ValueError('t_i has not been calculated')
+        
+        delta_h_i = (
+            (1 - self.Exp.Epsilon_0)/(1 - self.Exp.Epsilon_p)*self.Exp.H_0
+            - self.v_0*self.t_i/(2*(1 - self.Exp.Epsilon_p))      
+            - self.psi_i*self.t_i/(2*self.Exp.Epsilon_p)
+        )
+        return delta_h_i
             
             
             
@@ -185,26 +225,19 @@ class Simulation:
                 raise ValueError('v_0 has not been calculated')
             if self.psi_i is None:
                 raise ValueError('psi_i has not been calculated') 
-                
-            def V(x):
-                V = (
-                     self.Exp.H_0/x - self.v_0/2 - 
-                     (1 - self.Exp.Epsilon_p)*self.psi_i/(2*self.Exp.Epsilon_p)   
-                )
-                return V
             
             
             def f(x):               
                 f = (
                     (1 - self.Exp.Epsilon_0)/(1 - self.Exp.Epsilon_p)*self.Exp.H_0 
                     - self.Exp.Epsilon_p*self.v_0*x/(2*(1 - self.Exp.Epsilon_p))
-                    - self.psi_i*x/2 - self.Exp.H_0 + V(x)*x
-                    + self.psi_i*x/np.log(1 - self.psi_i/V(x))
+                    - self.psi_i*x/2 - self.Exp.H_0 + self.calc_V(x)*x
+                    + self.psi_i*x/np.log(1 - self.psi_i/self.calc_V(x))
                 )
                 return f
             
             def cons_log(x):
-                return 1 - self.psi_i/V(x)
+                return 1 - self.psi_i/self.calc_V(x)
             
             t_i_intervals = []
             in_interval = False
@@ -239,7 +272,7 @@ class Simulation:
                 raise ValueError('t_i could not be determined')
             
             self.t_i = t_i[res.index(min(res))]
-            self.V = V(self.t_i)
+            self.V = self.calc_V(self.t_i)
             
         def calc_tau_0_exp():
             if self.v_0 is None: 
@@ -250,21 +283,11 @@ class Simulation:
                 raise ValueError('t_i has not been calculated')
                 
             self.tau_0 = (2*self.Exp.H_0*self.Exp.Epsilon_p*(1 - self.Exp.Epsilon_0) - (self.v_0*self.Exp.Epsilon_p + self.psi_i*(1 - self.Exp.Epsilon_p))*self.t_i)/(3*self.psi_i*(1 - self.Exp.Epsilon_p))
-       
-        def calc_delta_h_i():
-            if self.v_0 is None:
-                raise ValueError('v_0 has not been calculated')
-            if self.psi_i is None:
-                raise ValueError('psi_i has not been calculated')
-            if self.t_i is None:
-                raise ValueError('t_i has not been calculated')
-            
-            self.delta_h_i = ((1 - self.Exp.Epsilon_0)/(1 - self.Exp.Epsilon_p)*self.Exp.H_0 - (self.v_0*self.t_i)/(2*(1 - self.Exp.Epsilon_p)) - (self.psi_i*self.t_i)/(2*self.Exp.Epsilon_p))
             
         calc_psi_i()
         calc_t_i()
         calc_tau_0_exp()
-        calc_delta_h_i()
+        self.delta_h_i = self.calc_delta_h_i()
         
     def calc_tau_0_phys(self):            
         def calc_tau_0():
@@ -273,35 +296,20 @@ class Simulation:
             delta_r = 0.267*(math.pi*r**4*self.Exp.A_m**2/(6*self.Exp.sigma*f))**(1/7)
             self.tau_0 = (3*math.pi*self.Exp.Mu_c*r**4)/(4*f*delta_r**2)
             
-        def calc_t_i():
-            def psi(x):
-                psi = (
-                    self.Exp.Epsilon_p*(2*self.Exp.H_0*(1 - self.Exp.Epsilon_0) - self.v_0*x)
-                    /((1 - self.Exp.Epsilon_p) * (3*self.tau_0 + x))
-                )    
-                return psi
-            
-            def V(x):
-                V = (
-                     self.Exp.H_0/x - self.v_0/2 - 
-                     (1 - self.Exp.Epsilon_p)*psi(x)/(2*self.Exp.Epsilon_p)   
-                )
-                return V
-            
-            
+        def calc_t_i():                       
             def f(x):               
                 f = (
                     (1 - self.Exp.Epsilon_0)/(1 - self.Exp.Epsilon_p)*self.Exp.H_0 
                     - self.Exp.Epsilon_p*self.v_0*x/(2*(1 - self.Exp.Epsilon_p))
-                    - psi(x)*x/2 - self.Exp.H_0 + V(x)*x
-                    + psi(x)*x/np.log(1 - psi(x)/V(x))
+                    - self.calc_psi_i(x)*x/2 - self.Exp.H_0 + self.calc_V_iteration(x)*x
+                    + self.calc_psi_i(x)*x/np.log(1 - self.calc_psi_i(x)/self.calc_V_iteration(x))
                 )
                 return f
             
             
             
             def cons_log(x):
-                return 1 - psi(x)/V(x)
+                return 1 - self.calc_psi_i(x)/self.calc_V_iteration(x)
             
             t_i_intervals = []
             in_interval = False
@@ -336,20 +344,68 @@ class Simulation:
                 raise ValueError('t_i could not be determined')
             
             self.t_i = t_i[res.index(min(res))]
-            self.V = V(self.t_i)
-            self.psi_i = psi(self.t_i)
+            self.psi_i = self.calc_psi_i(self.t_i)
+            self.V = self.calc_V(self.t_i)
             
-        def calc_delta_h_i():
-            self.delta_h_i = (
-                (1 - self.Exp.Epsilon_0)/(1 - self.Exp.Epsilon_p)*self.Exp.H_0
-                - self.v_0*self.t_i/(2*(1 - self.Exp.Epsilon_p))      
-                - self.psi_i*self.t_i/(2*self.Exp.Epsilon_p)
-            )
             
         calc_tau_0()
         calc_t_i()
-        calc_delta_h_i()
-    
+        self.delta_h_i = self.calc_delta_h_i()
+        
+    def set_parameters(self, v_0, phi_0, tau_0):
+        self.v_0 = v_0
+        self.phi_0 = phi_0
+        self.tau_0 = tau_0       
+        
+        def t_i_iteration(t_i):
+            t_i_iteration = (
+                (1 - self.Exp.Epsilon_0)/(1 - self.Exp.Epsilon_p)
+                *self.Exp.H_0- self.Exp.Epsilon_p*v_0*t_i
+                /(2*(1 - self.Exp.Epsilon_p)) - self.calc_psi_i(t_i)*t_i/2
+                - self.Exp.H_0 + self.calc_V_iteration(t_i)*t_i + self.calc_psi_i(t_i)*t_i
+                /np.log(1 - self.calc_psi_i(t_i)/self.calc_V_iteration(t_i))
+            )
+            return t_i_iteration
+        
+        def cons_log(x):
+            return 1 - self.calc_psi_i(x)/self.calc_V_iteration(x)
+        
+        t_i_intervals = []
+        in_interval = False
+        lb = None
+        ub = None
+        for i in range (1, int(self.Exp.H_c_time[-1])):
+            if not in_interval:
+                if cons_log(i) > 0:
+                    lb = i
+                    in_interval = True
+            if in_interval:
+                if cons_log(i) <= 0:
+                    ub = i - 1
+                    in_interval = False
+                    t_i_intervals.append([lb, ub])
+        if in_interval:
+            ub = int(self.Exp.H_c_time[-1])
+            t_i_intervals.append([lb, ub])
+        
+        t_i = []
+        res = []
+        
+        for bounds in t_i_intervals:
+            try:
+                t_i.append(optimize.brentq(t_i_iteration, bounds[0], bounds[1]))
+                res.append(t_i_iteration(t_i[-1]))
+            except:
+                pass
+        
+        if not t_i:
+            raise ValueError('t_i could not be determined')
+        
+        self.t_i = t_i[res.index(min(res))]
+        self.psi_i = self.calc_psi_i(self.t_i)
+        self.V = self.calc_V(self.t_i)
+        self.delta_h_i = self.calc_delta_h_i()
+        
         
     
     

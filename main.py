@@ -18,8 +18,9 @@ sim1.calc_phi_0_Pilhofer_Mewes()
 #sim1.calc_phi_0_Hartland_Kumar()
 
 #sim1.calc_tau_0_exp()
-sim1.calc_tau_0_phys()
+#sim1.calc_tau_0_phys()
 #sim1.set_parameters(9.2*1e-3, 0.847*1e-3, 24)
+sim1.calc_tau_0_num()
 
 sim1.simulate()
 sim1.plot_Results()

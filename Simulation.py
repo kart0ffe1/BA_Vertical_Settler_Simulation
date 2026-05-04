@@ -33,8 +33,8 @@ class Simulation:
     
     def calc_v_0(self, starting_range = 3, plot= True):
         reg_val= []
-        func_val = []
-        
+        func_val = []   
+         
         for i in range(0,starting_range):
             reg_val.append(self.Exp.H_s[i])
         
@@ -169,6 +169,9 @@ class Simulation:
         self.phi_0 = res[0]
     
     def calc_psi_i(self,t_i):        
+        if self.tau_0 is None:
+            raise ValueError('tau_0 has not been calculated')
+        
         psi_i = (
             self.Exp.Epsilon_p*(2*self.Exp.H_0*(1 - self.Exp.Epsilon_0)
             - self.v_0*t_i)/((1 - self.Exp.Epsilon_p)*(3*self.tau_0 + t_i))    
@@ -284,6 +287,8 @@ class Simulation:
                 
             self.tau_0 = (2*self.Exp.H_0*self.Exp.Epsilon_p*(1 - self.Exp.Epsilon_0) - (self.v_0*self.Exp.Epsilon_p + self.psi_i*(1 - self.Exp.Epsilon_p))*self.t_i)/(3*self.psi_i*(1 - self.Exp.Epsilon_p))
             
+            print(f'tau_0 determined to be {self.tau_0}s')
+            
         calc_psi_i()
         calc_t_i()
         calc_tau_0_exp()
@@ -295,6 +300,8 @@ class Simulation:
             r = self.phi_0**2*(self.Exp.Delta_rho*self.Exp.G/(12*self.Exp.sigma))**0.5
             delta_r = 0.267*(math.pi*r**4*self.Exp.A_m**2/(6*self.Exp.sigma*f))**(1/7)
             self.tau_0 = (3*math.pi*self.Exp.Mu_c*r**4)/(4*f*delta_r**2)
+            
+            print(f'Tau determined to be {self.tau_0}s')
             
         def calc_t_i():                       
             def f(x):               
@@ -406,6 +413,87 @@ class Simulation:
         self.V = self.calc_V(self.t_i)
         self.delta_h_i = self.calc_delta_h_i()
         
+    def calc_tau_0_num(self):
+        def tau_0_iteration(tau_0):                       
+            self.tau_0 = tau_0
+            def f(x):               
+                f = (
+                    (1 - self.Exp.Epsilon_0)/(1 - self.Exp.Epsilon_p)*self.Exp.H_0 
+                    - self.Exp.Epsilon_p*self.v_0*x/(2*(1 - self.Exp.Epsilon_p))
+                    - self.calc_psi_i(x)*x/2 - self.Exp.H_0 + self.calc_V_iteration(x)*x
+                    + self.calc_psi_i(x)*x/np.log(1 - self.calc_psi_i(x)/self.calc_V_iteration(x))
+                )
+                return f
+            
+            
+            
+            def cons_log(x):
+                return 1 - self.calc_psi_i(x)/self.calc_V_iteration(x)
+            
+            t_i_intervals = []
+            in_interval = False
+            lb = None
+            ub = None
+            for i in range (1, int(self.Exp.H_c_time[-1])):
+                if not in_interval:
+                    if cons_log(i) > 0:
+                        lb = i
+                        in_interval = True
+                if in_interval:
+                    if cons_log(i) <= 0:
+                        ub = i - 1
+                        in_interval = False
+                        t_i_intervals.append([lb, ub])
+            if in_interval:
+                ub = int(self.Exp.H_c_time[-1])
+                t_i_intervals.append([lb, ub])
+                        
+            
+            t_i = []
+            res = []
+            
+            for bounds in t_i_intervals:
+                try:
+                    t_i.append(optimize.brentq(f, bounds[0], bounds[1]))
+                    res.append(f(t_i[-1]))
+                except:
+                    pass
+            
+            if not t_i:
+                raise ValueError('t_i could not be determined')
+            
+            self.t_i = t_i[res.index(min(res))]
+            self.psi_i = self.calc_psi_i(self.t_i)
+            self.V = self.calc_V(self.t_i)
+            self.delta_h_i = self.calc_delta_h_i()
+            
+            self.simulate()
+            #self.plot_Results()
+            return self.err()
+            
+            
+        best_res = []
+        first_found = False
+        for i in range(1, 151):
+            if not first_found:
+                try:
+                    err = tau_0_iteration(i)
+                    best_res = [i, err]
+                    first_found = True
+                except:
+                    pass
+            else:
+                try:
+                    if tau_0_iteration(i) < best_res[1]:
+                        err = tau_0_iteration(i)
+                        best_res = [i, err]
+                except:
+                    pass
+            
+        
+        self.tau_0 = best_res[0]
+        print(f'tau 0 found with {self.tau_0}s with an error of {best_res[1]}')
+        tau_0_iteration(self.tau_0)
         
     
     
@@ -465,10 +553,12 @@ class Simulation:
             raise ValueError('Simulation not run yet')
         
         h_c_interp = np.interp(np.array(self.Exp.H_c_time, dtype='float64'), np.array(self.time, dtype='float64'), np.array(self.h_c, dtype='float64'))
+        h_s_interp = np.interp(np.array(self.Exp.H_s_time, dtype='float64'), np.array(self.time, dtype='float64'), np.array(self.h_s, dtype='float64'))
         
         err_coal = hlp.nrmse(self.Exp.H_c, h_c_interp, self.Exp.H_0)
+        err_sed = hlp.nrmse(self.Exp.H_s, h_s_interp, self.Exp.H_0/(1- self.Exp.Epsilon_0))
         err_t_f = ((self.Exp.T_f - self.t_f)/(2*self.Exp.T_f))**2
-        err_tot = err_coal + err_t_f
+        err_tot = err_coal + + err_sed + err_t_f
         
         return err_tot
     

@@ -13,7 +13,7 @@ import math
 import os
 from openpyxl import Workbook
 
-class Simulation:
+class Batch_Simulation:
     def __init__(self, Exp, Sed_Model):
         self.Exp = Exp
         self.v_0 = Sed_Model.v_0

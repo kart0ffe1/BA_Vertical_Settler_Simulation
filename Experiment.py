@@ -7,7 +7,7 @@ Created on Sun Apr 26 22:55:18 2026
 import pandas as pd
 import matplotlib.pyplot as plt
 
-class Experiment:
+class Batch_Experiment:
     def __init__(self, file_dir):
         self.df = pd.read_excel(file_dir, header=None)
         self.H_0 = self.df.iloc[1,0] * 1e-3
